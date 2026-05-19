@@ -189,6 +189,16 @@ done
 ## Repo Structure
 
 ```
-├── README.md              ← This file
-└── user-data-final.sh     ← EC2 launch script (nginx + HTML page)
+├── LICENSE
+├── README.md                        ← This file
+├── user-data-final.sh               ← EC2 launch script (nginx + HTML page)
+└── screenshots/
+    ├── App.png                      ← nginx page showing Instance ID
+    ├── ALB-Resource map.png         ← ALB resource map with targets
+    ├── ALP-Activity.png             ← Auto Scaling Group activity log
+    ├── Autoscaling-group.png        ← ASG configuration overview
+    ├── Launch template.png          ← Launch template details
+    ├── Target-group.png             ← Target group health status
+    ├── cloudwatch-alarm1.png        ← Scale-out alarm (CPU > 75%)
+    └── cloudwatch-alarm2.png        ← Scale-in alarm (CPU < 45%)
 ```
