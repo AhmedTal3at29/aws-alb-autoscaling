@@ -1,216 +1,166 @@
-# AWS High Availability Web Architecture 🚀
+# AWS Load Balancer & Auto Scaling 🚀
 
-A production-style AWS infrastructure project implementing:
+A hands-on AWS project demonstrating how to build a highly available and self-healing web infrastructure using:
 
-- High Availability (HA)
 - Application Load Balancer (ALB)
 - Auto Scaling Group (ASG)
-- CloudWatch Monitoring & Alarms
-- Self-Healing Infrastructure
-- Multi-AZ Deployment
-- Dynamic CPU-based Scaling
-- Automated EC2 provisioning using User Data
-
-Built completely on AWS using:
-
-- VPC
-- EC2
-- ALB
-- Auto Scaling
-- CloudWatch
+- CloudWatch Alarms
+- EC2 Launch Templates
 - nginx
-- Launch Templates
+- Multi-AZ deployment
+
+The infrastructure automatically scales EC2 instances based on CPU utilization and replaces unhealthy instances automatically.
 
 ---
 
-# 📐 Architecture Overview
+# 📐 Architecture
 
 ```text
-                     Internet
-                         │
-                         ▼
-           ┌─────────────────────────┐
-           │  Application Load       │
-           │     Balancer (ALB)      │
-           └──────────┬──────────────┘
-                      │
-          ┌───────────┴───────────┐
-          ▼                       ▼
- ┌────────────────┐     ┌────────────────┐
- │ EC2 Instance   │     │ EC2 Instance   │
- │ AZ-1           │     │ AZ-2           │
- │ nginx          │     │ nginx          │
- └────────────────┘     └────────────────┘
-          ▲                       ▲
-          └───────────┬───────────┘
-                      │
-              Auto Scaling Group
-                      │
-               CloudWatch Alarms
-         CPU > 75%  → Scale Out
-         CPU < 45%  → Scale In
+                        ┌─────────────────────────────────┐
+                        │         CloudWatch Alarms        │
+                        │  CPU > 75% → Scale Out (+1)      │
+                        │  CPU < 45% → Scale In  (-1)      │
+                        └────────────┬────────────────────┘
+                                     │ triggers
+Internet ──► ALB (HTTP:80) ──────────▼──────────────────────
+                │             Auto Scaling Group
+                │         ┌──────────┬──────────┐
+                └────────►│  EC2 #1  │  EC2 #2  │  (+ EC2 #3 on scale-out)
+                          │  nginx   │  nginx   │
+                          └──────────┴──────────┘
+                          Min: 1 | Desired: 2 | Max: 3
 ```
 
 ---
 
-# 🧩 AWS Services Used
+# 🧩 What Was Built
 
-| Service | Purpose |
-|---|---|
-| VPC | Isolated AWS network |
-| Public Subnets | Internet-facing resources |
-| Internet Gateway | Internet access |
-| Security Groups | Firewall rules |
-| EC2 | Web servers |
-| nginx | Web application |
-| Application Load Balancer | Traffic distribution |
-| Target Groups | Backend registration |
-| Auto Scaling Group | Dynamic scaling |
-| Launch Template | EC2 standardization |
-| CloudWatch | Monitoring & alarms |
+## 1. VPC & Networking
 
----
+- VPC with **2 public subnets** in different Availability Zones
+- Internet Gateway attached with Route Table:
+  
+```text
+0.0.0.0/0 → Internet Gateway
+```
 
-# ⚙️ Infrastructure Components
+- Auto-assign public IPv4 enabled on subnets
 
-## VPC Configuration
+### Security Group Rules
 
-| Component | CIDR |
-|---|---|
-| VPC | `10.0.0.0/16` |
-| Public Subnet AZ-1 | `10.0.1.0/24` |
-| Public Subnet AZ-2 | `10.0.3.0/24` |
-
----
-
-# 🔒 Security Groups
-
-## ALB Security Group
-
-| Type | Port | Source |
+| Rule | Port | Source |
 |---|---|---|
 | HTTP | 80 | 0.0.0.0/0 |
+| SSH | 22 | Trusted IP |
 
 ---
 
-## EC2 Security Group
+# ⚖️ Application Load Balancer (ALB)
 
-| Type | Port | Source |
-|---|---|---|
-| HTTP | 80 | ALB Security Group |
-| SSH | 22 | My IP |
-| ICMP | All | My IP |
+| Setting | Value |
+|---|---|
+| Type | Application Load Balancer |
+| Scheme | Internet-facing |
+| Listener | HTTP:80 |
+| Health Check | `/` |
+| Target Type | Instance |
 
----
+### Features
 
-# 🚀 Project Features
-
-## ✅ Application Load Balancer (ALB)
-
-- Internet-facing ALB
-- Routes traffic to healthy EC2 instances
-- Performs automatic health checks
-- Supports fault tolerance
+- Distributes traffic across EC2 instances
+- Performs health checks automatically
+- Removes unhealthy instances
+- Works across multiple AZs
 
 ---
 
-## ✅ Auto Scaling Group (ASG)
+# 🖥️ Launch Template
+
+| Component | Value |
+|---|---|
+| AMI | Amazon Linux 2023 |
+| Instance Type | t3.micro |
+| Web Server | nginx |
+| Key Pair | Enabled |
+| User Data | Enabled |
+
+---
+
+# 📈 Auto Scaling Group (ASG)
 
 | Setting | Value |
 |---|---|
 | Minimum Capacity | 1 |
 | Desired Capacity | 2 |
 | Maximum Capacity | 3 |
+| Health Check Type | ELB |
+| Scale-Out Cooldown | 60s |
+| Scale-In Cooldown | 300s |
 
 ### Features
 
-- Automatic scaling
+- Dynamic scaling
 - Self-healing infrastructure
-- Multi-AZ balancing
 - Automatic unhealthy instance replacement
+- Multi-AZ balancing
 
 ---
 
-# 📈 CloudWatch Dynamic Scaling
+# 📊 CloudWatch Alarms
 
-## Scale-Out Policy
+| Alarm | Metric | Threshold | Action |
+|---|---|---|---|
+| scale-out-cpu-75 | CPUUtilization | > 75% | Add 1 instance |
+| scale-in-cpu-45 | CPUUtilization | < 45% | Remove 1 instance |
+
+> CloudWatch monitors the **average CPU utilization across all EC2 instances** inside the Auto Scaling Group.
+
+---
+
+# 🧠 Scaling Logic
+
+## Scale-Out
 
 ```text
 CPU > 75%
-→ Launch 1 new EC2 instance
+→ CloudWatch Alarm Triggered
+→ ASG launches new EC2 instance
+→ ALB registers target automatically
 ```
 
 ---
 
-## Scale-In Policy
+## Scale-In
 
 ```text
 CPU < 45%
-→ Terminate 1 EC2 instance
+→ CloudWatch Alarm Triggered
+→ ASG terminates extra EC2 instance
+→ ALB deregisters target gracefully
 ```
 
 ---
 
-# 📊 Scaling Workflow
+# 🖥️ EC2 User Data Script
 
-```text
-High CPU Load
-      │
-      ▼
-CloudWatch Alarm Triggered
-      │
-      ▼
-Auto Scaling Group
-      │
-      ▼
-Launch New EC2 Instance
-      │
-      ▼
-ALB Registers Target
-      │
-      ▼
-Traffic Distributed Automatically
-```
-
----
-
-# 🖥️ EC2 User Data Automation
-
-Each EC2 instance automatically:
+Every EC2 instance launched by the Auto Scaling Group automatically:
 
 - Installs nginx
-- Installs stress testing tool
+- Installs stress testing package
 - Starts nginx service
-- Generates dynamic HTML page
-- Displays:
-  - Instance ID
-  - Availability Zone
-  - Instance Type
-  - ALB information
-  - Scaling policy details
-
----
-
-# 📜 User Data Script
-
-The complete EC2 bootstrap script is available in:
-
-```text
-user-data-final.sh
-```
-
-This script automatically:
-
-- Installs nginx
-- Installs stress package
-- Enables and starts nginx
-- Retrieves EC2 metadata using IMDSv2
-- Generates a dynamic web page displaying:
+- Retrieves instance metadata using IMDSv2
+- Generates a dynamic HTML page displaying:
   - Instance ID
   - Availability Zone
   - Instance Type
   - ALB information
   - Scaling policies
+
+The complete script is available in:
+
+```text
+user-data-final.sh
+```
 
 ---
 
@@ -220,12 +170,12 @@ This script automatically:
 
 ## ✅ Load Balancing Test
 
-Refreshing the ALB DNS endpoint displays different instance IDs.
+Refreshing the ALB DNS endpoint displayed different Instance IDs.
 
 ### Result
 
-- Verified ALB distributes traffic correctly.
-- Verified Multi-AZ routing.
+- Verified ALB traffic distribution
+- Verified Multi-AZ balancing
 
 ---
 
@@ -238,8 +188,8 @@ Stopped one EC2 instance manually.
 ```text
 ALB detected unhealthy target
 → ASG launched replacement instance
-→ New instance registered automatically
-→ Target became healthy
+→ New target registered automatically
+→ Service restored successfully
 ```
 
 ---
@@ -251,7 +201,7 @@ Terminated EC2 instances manually.
 ### Result
 
 ```text
-ASG automatically recreated instances
+ASG recreated instances automatically
 without manual intervention
 ```
 
@@ -259,54 +209,125 @@ without manual intervention
 
 ## ✅ Scale-Out Test
 
-Generated CPU load:
+Generated CPU load using:
 
 ```bash
-stress --cpu 2 --timeout 300
+yes > /dev/null &
+yes > /dev/null &
 ```
 
-### Expected Result
+Or:
+
+```bash
+sudo stress --cpu 2 --vm 1 --vm-bytes 400M --timeout 300
+```
+
+### Result
 
 ```text
-CPU > 75%
+CPU exceeded 75%
 → CloudWatch alarm triggered
-→ ASG launched new EC2 instance
+→ ASG launched additional EC2 instance
 ```
 
 ---
 
 ## ✅ Scale-In Test
 
-After stress test completed:
+Stopped stress testing.
+
+### Result
 
 ```text
-CPU < 45%
+CPU dropped below 45%
 → CloudWatch alarm triggered
 → ASG terminated extra EC2 instance
 ```
 
 ---
 
-# 🔥 Concepts Demonstrated
+# 🔥 Issues Encountered & Solutions
 
-- High Availability
-- Fault Tolerance
-- Self-Healing Infrastructure
-- Elastic Scaling
-- Health Checks
-- Connection Draining
-- Multi-AZ Architecture
-- Cloud Monitoring
-- Dynamic Scaling
-- Infrastructure Automation
+---
+
+## 🔴 Infinite Replacement Loop
+
+### Problem
+
+ASG continuously launched and terminated instances.
+
+### Root Cause
+
+Instances had no internet access, causing:
+
+```bash
+dnf install nginx
+```
+
+to fail during User Data execution.
+
+nginx never started, so ALB health checks failed.
+
+### Solution
+
+- Enabled Auto-assign Public IPv4
+- Added Route Table entry:
+
+```text
+0.0.0.0/0 → Internet Gateway
+```
+
+---
+
+## 🔴 Scale-Out Not Triggering
+
+### Problem
+
+CPU stress test on one instance only showed ~50% utilization.
+
+### Root Cause
+
+CloudWatch measures the **average CPU across all instances**.
+
+Example:
+
+| Instance | CPU |
+|---|---|
+| EC2 #1 | 100% |
+| EC2 #2 | 0% |
+
+Average = 50%
+
+### Solution
+
+Run stress test on both instances simultaneously.
+
+Result:
+
+```text
+Average CPU exceeded 75%
+→ Scale-Out triggered successfully
+
+---
+
+# 🔑 Key Concepts Demonstrated
+
+| Concept | Description |
+|---|---|
+| ALB | Distributes traffic across EC2 targets |
+| Target Group | Backend EC2 instances |
+| Health Checks | Detect unhealthy instances |
+| Launch Template | Blueprint for EC2 instances |
+| Auto Scaling Group | Automatic scaling & recovery |
+| IMDSv2 | Secure EC2 metadata access |
+| Connection Draining | Graceful target deregistration |
+| Cooldown | Prevents rapid scaling fluctuations |
 
 ---
 
 # 📁 Repository Structure
 
 ```text
-aws-ha-web-architecture/
-│
 ├── LICENSE
 ├── README.md                        ← This file
 ├── user-data-final.sh               ← EC2 launch script (nginx + HTML page)
@@ -326,52 +347,27 @@ aws-ha-web-architecture/
 
 # 📸 Screenshots Included
 
-- Application running behind ALB
+- nginx application page
 - ALB Resource Map
 - Auto Scaling activity logs
-- Launch Template configuration
 - Target Group health checks
+- Launch Template configuration
 - CloudWatch alarms
-- Dynamic EC2 scaling events
+- Scaling events
 
 ---
 
-# 🧠 Key Learnings
-
-This project demonstrates practical experience with:
-
-- AWS Networking
-- EC2 Operations
-- Load Balancing
-- Auto Scaling
-- Monitoring & Alerting
-- Infrastructure Resiliency
-- Production-style Cloud Architecture
-
----
-
-# 🚀 Future Improvements
-
-- HTTPS using ACM
-- Route53 Domain
-- AWS WAF
-- CloudFront CDN
-- Terraform Infrastructure as Code
-- CI/CD Pipeline
-- Docker Containers
-- ECS / Kubernetes
-
----
 
 # 🏆 Final Outcome
 
-A fully functional production-style AWS architecture capable of:
+A production-style AWS architecture capable of:
 
-✅ Handling traffic dynamically  
-✅ Recovering from failures automatically  
-✅ Scaling based on CPU utilization  
-✅ Distributing traffic across multiple Availability Zones  
-✅ Automatically replacing unhealthy instances  
+✅ Dynamic traffic distribution  
+✅ Automatic scaling  
+✅ Self-healing recovery  
+✅ Multi-AZ high availability  
+✅ Automated EC2 provisioning  
+✅ Cloud-based monitoring & alerting  
 
 ---
 
